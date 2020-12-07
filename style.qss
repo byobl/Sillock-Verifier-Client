@@ -1,0 +1,8 @@
+QTableWidget {   
+    background: url("./source/sillock-logo-none-bg-50.png") no-repeat center center fixed;
+    background-color: white;
+}
+
+QTableWidget::item {
+    background-color: white;
+}
