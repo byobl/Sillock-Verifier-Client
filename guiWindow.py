@@ -73,14 +73,11 @@ def verifySign(data, publicKey, signature):
 
     message = SHA256.new(allHashed.encode())
     message = message.hexdigest()
-    print(message)
 
-    ## 수정해야 할 부분
+    ## Verify Signature
     rsakey = RSA.importKey(publicKey) 
     signer = PKCS1_v1_5.new(rsakey) 
     digest = SHA256.new(message.encode())
-    print(publicKey)
-    print(signature)
 
     if signer.verify(digest, b64decode(signature.encode())):
         return True
@@ -200,13 +197,12 @@ class App(QWidget):
         DDoList = list()
         
         for pdf in self.pdfList:
-            VCList.append(pdf[1].split(":")[2].strip())
-            DDoList.append(pdf[2].split(":")[2].strip())
+            VCList.append(pdf[1].strip())
+            DDoList.append(pdf[2].strip())
 
         DDoQueryResult = queryToChainCode(APIkey, DDoList, "ddo")['result']
         VCQueryResult = queryToChainCode(APIkey, VCList, "vc")['result']
-        #print(DDoQueryResult[0]["DDo"]["publicKey"][0][])
-        #print(VCQueryResult)
+
         # Check Row number of data
         if self.tableWidget.rowCount() == 0:
             return
@@ -233,8 +229,8 @@ class App(QWidget):
                 time.sleep(0.5)
             # Verification function() here
             result = verifySign(self.pdfList[row], DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], VCQueryResult[row]["DDo"]["proof"]["signature"])
-            print(result)
-            self.tableWidget.item(row, col).setText(str(random.randint(0, 1)))
+            
+            self.tableWidget.item(row, col).setText(str("성공" if result else "실패"))
         
     def upload_files(self):
         self.openFileNamesDialog()
