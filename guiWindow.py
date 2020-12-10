@@ -135,6 +135,16 @@ class App(QWidget):
         # Verification table Layout
         VeriLayout = QVBoxLayout()
         VeriLayout.addWidget(self.tableWidget)
+
+        # Set Progress Bar
+        self.pbar = QProgressBar(self)
+        self.pbar.setGeometry(20, 600, 600, 20)
+        self.pbar.setValue(0)
+
+        # Add Pbar in Layout
+        PbarLayout = QVBoxLayout()
+        PbarLayout.addWidget(self.pbar)
+
         
         # Set Grid Layout
         # Add Widget to Grid Layout
@@ -145,9 +155,10 @@ class App(QWidget):
         ControlGrid.addWidget(veriStart_btn,    2, 1)
         
         # Add layout to main Frame
-        self.windowLayout.addLayout(VeriLayout ) # VeriLayout  View
+        self.windowLayout.addLayout(VeriLayout ) # VeriLayout View
+        self.windowLayout.addLayout(PbarLayout ) # PbarLayout View
         self.windowLayout.addLayout(ControlGrid) # ControlGrid View
-        
+
         self.show()
 
     def saveCSV(self):
@@ -194,6 +205,7 @@ class App(QWidget):
         if len(self.APIkeyInput.text().strip()) == 0:
             return
         
+        verifyResult = {"success" : 0, "failure" : 0}
         # request Verification API & change table values
         for row in range(self.numOfDocs):
             for col in range(self.ColNum):
@@ -203,9 +215,13 @@ class App(QWidget):
                 time.sleep(0.5)
             # Verification function() here
             result = verifySign(self.pdfList[row], DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], VCQueryResult[row]["DDo"]["proof"]["signature"])
-            
-            self.tableWidget.item(row, col).setText(str("성공" if result else "실패"))
+            key = "success" if result else "failure"
+            verifyResult[key] += 1
+            self.tableWidget.item(row, col).setText(str("진실" if result else "거짓"))
+            self.pbar.setValue((row + 1) / self.numOfDocs * 100)
         
+        buttonReply = QMessageBox.information(self, "검증 결과", "진실: {success}, 거짓: {failure}\n".format(success = verifyResult["success"], failure = verifyResult["failure"]), QMessageBox.Yes)
+
     def upload_files(self): # pdf 검증 추가
         self.openFileNamesDialog()
         
@@ -229,6 +245,8 @@ class App(QWidget):
             ## add pdfFile info
             pdfFile = pdfToTxt(self.fileList[row])
             self.pdfList.append(pdfFile)
+        
+        self.pbar.setValue(0)
 
     def openFileNamesDialog(self):
         options  = QFileDialog.Options()

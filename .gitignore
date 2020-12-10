@@ -2,7 +2,7 @@ pyvenv.cfg
 __pycache__/*.pyc
 .vscode
 
-
+/build
 /include
 /Lib
 /Scripts
