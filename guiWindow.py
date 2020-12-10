@@ -48,6 +48,7 @@ def convertPdfToTxt(path):
     retstr.close()
     return text
 
+## 검증을 서버에서 처리하는 코드도 만들 것
 def queryToChainCode(APIkey, didList, queryType):
     didUrl = ""
     for did in didList:
@@ -195,6 +196,8 @@ class App(QWidget):
 
         VCList = list()
         DDoList = list()
+
+        # DID가 없는 잘못된 문서일 경우 -> 경고창
         
         for pdf in self.pdfList:
             VCList.append(pdf[1].strip())
@@ -212,15 +215,6 @@ class App(QWidget):
             return
         
         # request Verification API & change table values
-        '''
-        ## test-Data Sample
-        [
-            [file name, 0]
-            [file name, 1]
-            [file name, 0]
-            ...
-        ]
-        '''  
         for row in range(self.numOfDocs):
             for col in range(self.ColNum):
                 #print(self.dataset[row], self.dataset[col]) # (file name, file status)
@@ -232,7 +226,7 @@ class App(QWidget):
             
             self.tableWidget.item(row, col).setText(str("성공" if result else "실패"))
         
-    def upload_files(self):
+    def upload_files(self): # pdf 검증 추가
         self.openFileNamesDialog()
         
         if len(self.fileList) == 0:
@@ -243,16 +237,6 @@ class App(QWidget):
         self.tableWidget.setColumnCount(self.ColNum)
         self.tableWidget.setHorizontalHeaderLabels(["파일 이름", "검증 결과"])
         self.tableWidget.setSortingEnabled(False)
-
-        '''
-        ## test-Data Sample
-        [
-            [file name, result(none) == "-"]
-            [file name, result(none) == "-"]
-            [file name, result(none) == "-"]
-            ...
-        ]
-        '''
 
         self.dataset = [[x, "-"] for x in self.fileList]
 
