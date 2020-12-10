@@ -1,6 +1,7 @@
 import os
 import sys
 import csv
+import json
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
@@ -8,6 +9,83 @@ from PyQt5.QtCore import *
 ## for test
 import time
 import random
+
+## add requests, pdfminer, pycryptodome
+import requests
+
+from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+from pdfminer.converter import TextConverter
+from pdfminer.layout import LAParams
+from pdfminer.pdfpage import PDFPage
+from io import StringIO
+
+from Crypto.Signature import PKCS1_v1_5
+from Crypto.PublicKey import RSA
+from Crypto.Hash import SHA256
+from base64 import b64decode, b64encode
+import hashlib
+
+def convertPdfToTxt(path):
+    rsrcmgr = PDFResourceManager()
+    retstr = StringIO()
+    codec = 'utf-8'
+    laparams = LAParams()
+    device = TextConverter(rsrcmgr, retstr, codec=codec, laparams=laparams)
+    fp = open(path, 'rb')
+    interpreter = PDFPageInterpreter(rsrcmgr, device)
+    password = ""
+    maxpages = 0
+    caching = True
+    pagenos=set()
+
+    for page in PDFPage.get_pages(fp, pagenos, maxpages=maxpages, password=password,caching=caching, check_extractable=True):
+        interpreter.process_page(page)
+
+    text = retstr.getvalue()
+
+    fp.close()
+    device.close()
+    retstr.close()
+    return text
+
+def queryToChainCode(APIkey, didList, queryType):
+    didUrl = ""
+    for did in didList:
+        if didUrl: 
+            didUrl += "%2C"
+        didUrl += did
+    headers = {"Content-Type" : "application/json; charset=utf-8", "apiKey" : APIkey}
+    url = "http://bc.sillock.me:8080/user/" + queryType + "/" + didUrl + "?user=admin&domain=test.com"
+    response = requests.get(url, headers=headers)
+    return response.json()
+    
+def verifySign(data, publicKey, signature):
+    allHashed = ""
+    for idx in range(3, len(data) - 1):
+        value = data[idx].split(":")[1].strip()
+        if value.startswith("#"):
+            allHashed += value[1:]
+            continue
+        encoded = str(value).encode("utf-8")
+        _hashed = hashlib.new("sha256")
+        _hashed.update(encoded)
+        allHashed += _hashed.hexdigest()
+
+    message = SHA256.new(allHashed.encode())
+    message = message.hexdigest()
+    print(message)
+
+    ## 수정해야 할 부분
+    rsakey = RSA.importKey(publicKey) 
+    signer = PKCS1_v1_5.new(rsakey) 
+    digest = SHA256.new(message.encode())
+    print(publicKey)
+    print(signature)
+
+    if signer.verify(digest, b64decode(signature.encode())):
+        return True
+    return False
+
 
 def restore(settings):
     finfo = QFileInfo(settings.fileName())
@@ -28,12 +106,15 @@ class App(QWidget):
         self.title     = 'SILLOCK Client'
         self.left      = 100
         self.top       = 100
-        self.width     = 520
-        self.height    = 520
+        self.width     = 720
+        self.height    = 720
         
         self.fileList  = list()
         self.numOfDocs = 0
         self.ColNum    = 2
+
+        # Pdf to Text data
+        self.pdfList = list()
         
         # test dataset
         self.dataset   = list(list())
@@ -111,7 +192,21 @@ class App(QWidget):
     
     def veriStart(self):
         print(self.APIkeyInput.text()) # API KEY
+
+        # Query to ChainCode
+        APIkey = self.APIkeyInput.text().strip()
+
+        VCList = list()
+        DDoList = list()
         
+        for pdf in self.pdfList:
+            VCList.append(pdf[1].split(":")[2].strip())
+            DDoList.append(pdf[2].split(":")[2].strip())
+
+        DDoQueryResult = queryToChainCode(APIkey, DDoList, "ddo")['result']
+        VCQueryResult = queryToChainCode(APIkey, VCList, "vc")['result']
+        #print(DDoQueryResult[0]["DDo"]["publicKey"][0][])
+        #print(VCQueryResult)
         # Check Row number of data
         if self.tableWidget.rowCount() == 0:
             return
@@ -129,8 +224,7 @@ class App(QWidget):
             [file name, 0]
             ...
         ]
-        '''
-        
+        '''  
         for row in range(self.numOfDocs):
             for col in range(self.ColNum):
                 #print(self.dataset[row], self.dataset[col]) # (file name, file status)
@@ -138,6 +232,8 @@ class App(QWidget):
                 self.tableWidget.update()
                 time.sleep(0.5)
             # Verification function() here
+            result = verifySign(self.pdfList[row], DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], VCQueryResult[row]["DDo"]["proof"]["signature"])
+            print(result)
             self.tableWidget.item(row, col).setText(str(random.randint(0, 1)))
         
     def upload_files(self):
@@ -151,6 +247,7 @@ class App(QWidget):
         self.tableWidget.setColumnCount(self.ColNum)
         self.tableWidget.setHorizontalHeaderLabels(["파일 이름", "검증 결과"])
         self.tableWidget.setSortingEnabled(False)
+
         '''
         ## test-Data Sample
         [
@@ -160,12 +257,18 @@ class App(QWidget):
             ...
         ]
         '''
+
         self.dataset = [[x, "-"] for x in self.fileList]
+
+        self.pdfList = list()
         
         for row in range(self.numOfDocs):
             for col in range(self.ColNum):
                 item = QTableWidgetItem(str(self.dataset[row][col]))
                 self.tableWidget.setItem(row, col, item)
+            ## add pdfFile info
+            pdfFile = list(filter(lambda x: x != " " and x, convertPdfToTxt(self.fileList[row]).splitlines()))
+            self.pdfList.append(pdfFile)
 
     def openFileNamesDialog(self):
         options  = QFileDialog.Options()
@@ -175,3 +278,4 @@ class App(QWidget):
                                                 "All Files (*);;Python Files (*.py)")
         if files:
             self.fileList = files
+

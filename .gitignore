@@ -1,2 +1,8 @@
+pyvenv.cfg
 __pycache__/*.pyc
 .vscode
+
+
+/include
+/Lib
+/Scripts

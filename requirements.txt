@@ -4,3 +4,6 @@ pyqt5-tools==5.15.0.1.7
 QDarkStyle==2.8.1
 qtmodern==0.2.0
 QtPy==1.9.0
+pdfminer.six==20201018
+requests==2.25.0
+pycryptodome==3.9.9
