@@ -9,15 +9,10 @@ from PyQt5.QtCore import *
 ## for test
 import time
 import random
+import fitz
 
 ## add requests, pdfminer, pycryptodome
 import requests
-
-from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
-from pdfminer.converter import TextConverter
-from pdfminer.layout import LAParams
-from pdfminer.pdfpage import PDFPage
-from io import StringIO
 
 from Crypto.Signature import PKCS1_v1_5
 from Crypto.PublicKey import RSA
@@ -25,28 +20,11 @@ from Crypto.Hash import SHA256
 from base64 import b64decode, b64encode
 import hashlib
 
-def convertPdfToTxt(path):
-    rsrcmgr = PDFResourceManager()
-    retstr = StringIO()
-    codec = 'utf-8'
-    laparams = LAParams()
-    device = TextConverter(rsrcmgr, retstr, codec=codec, laparams=laparams)
-    fp = open(path, 'rb')
-    interpreter = PDFPageInterpreter(rsrcmgr, device)
-    password = ""
-    maxpages = 0
-    caching = True
-    pagenos=set()
 
-    for page in PDFPage.get_pages(fp, pagenos, maxpages=maxpages, password=password,caching=caching, check_extractable=True):
-        interpreter.process_page(page)
+def pdfToTxt(path):
+    doc = fitz.open(path)
+    return list(filter(lambda x: x != " " and x, doc[0].getText().splitlines()))
 
-    text = retstr.getvalue()
-
-    fp.close()
-    device.close()
-    retstr.close()
-    return text
 
 ## 검증을 서버에서 처리하는 코드도 만들 것
 def queryToChainCode(APIkey, didList, queryType):
@@ -193,6 +171,8 @@ class App(QWidget):
 
         # Query to ChainCode
         APIkey = self.APIkeyInput.text().strip()
+        if not APIkey :
+            return
 
         VCList = list()
         DDoList = list()
@@ -247,7 +227,7 @@ class App(QWidget):
                 item = QTableWidgetItem(str(self.dataset[row][col]))
                 self.tableWidget.setItem(row, col, item)
             ## add pdfFile info
-            pdfFile = list(filter(lambda x: x != " " and x, convertPdfToTxt(self.fileList[row]).splitlines()))
+            pdfFile = pdfToTxt(self.fileList[row])
             self.pdfList.append(pdfFile)
 
     def openFileNamesDialog(self):
