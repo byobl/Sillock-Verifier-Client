@@ -2,16 +2,19 @@ import os
 import sys
 import csv
 import json
+import threading
+import multiprocessing
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
+
 
 ## for test
 import time
 import random
 import fitz
 
-## add requests, pdfminer, pycryptodome
+## add requests, PyMuPDF, pycryptodome
 import requests
 
 from Crypto.Signature import PKCS1_v1_5
@@ -25,8 +28,6 @@ def pdfToTxt(path):
     doc = fitz.open(path)
     return list(filter(lambda x: x != " " and x, doc[0].getText().splitlines()))
 
-
-## 검증을 서버에서 처리하는 코드도 만들 것
 def queryToChainCode(APIkey, didList, queryType):
     didUrl = ""
     for did in didList:
@@ -59,9 +60,8 @@ def verifySign(data, publicKey, signature):
     digest = SHA256.new(message.encode())
 
     if signer.verify(digest, b64decode(signature.encode())):
-        return True
-    return False
-
+        exit(True)
+    exit(False)
 
 def restore(settings):
     finfo = QFileInfo(settings.fileName())
@@ -117,7 +117,7 @@ class App(QWidget):
         
         # Verification Start Button
         veriStart_btn   = QPushButton("검증 시작", self)
-        veriStart_btn.clicked.connect(self.veriStart) #
+        veriStart_btn.clicked.connect(self.veriStart)
         
         # Verification table Widget
         self.tableWidget = QTableWidget()
@@ -179,7 +179,12 @@ class App(QWidget):
     
     def veriStart(self):
         print(self.APIkeyInput.text()) # API KEY
+        
+        t1 = threading.Thread(target = self.verifyThread)
+        t1.daemon = True
+        t1.start()
 
+    def verifyThread(self):
         # Query to ChainCode
         APIkey = self.APIkeyInput.text().strip()
         if not APIkey :
@@ -205,7 +210,9 @@ class App(QWidget):
         if len(self.APIkeyInput.text().strip()) == 0:
             return
         
+        # Reset verifyResult 
         verifyResult = {"success" : 0, "failure" : 0}
+
         # request Verification API & change table values
         for row in range(self.numOfDocs):
             for col in range(self.ColNum):
@@ -213,13 +220,17 @@ class App(QWidget):
                 self.tableWidget.repaint()
                 self.tableWidget.update()
                 time.sleep(0.5)
-            # Verification function() here
-            result = verifySign(self.pdfList[row], DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], VCQueryResult[row]["DDo"]["proof"]["signature"])
+            # Verification function() 
+            p = multiprocessing.Process(target = verifySign, args = (self.pdfList[row], DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], VCQueryResult[row]["DDo"]["proof"]["signature"]))
+            p.start()
+            p.join()
+            result = p.exitcode
+
             key = "success" if result else "failure"
             verifyResult[key] += 1
             self.tableWidget.item(row, col).setText(str("진실" if result else "거짓"))
             self.pbar.setValue((row + 1) / self.numOfDocs * 100)
-        
+    
         buttonReply = QMessageBox.information(self, "검증 결과", "진실: {success}, 거짓: {failure}\n".format(success = verifyResult["success"], failure = verifyResult["failure"]), QMessageBox.Yes)
 
     def upload_files(self): # pdf 검증 추가
