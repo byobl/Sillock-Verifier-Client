@@ -60,8 +60,10 @@ def verifySign(data, publicKey, signature):
     digest = SHA256.new(message.encode())
 
     if signer.verify(digest, b64decode(signature.encode())):
-        exit(True)
-    exit(False)
+        return True
+        #exit(True)
+    return False
+    #exit(False)
 
 def restore(settings):
     finfo = QFileInfo(settings.fileName())
@@ -221,10 +223,12 @@ class App(QWidget):
                 self.tableWidget.update()
                 time.sleep(0.5)
             # Verification function() 
-            p = multiprocessing.Process(target = verifySign, args = (self.pdfList[row], DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], VCQueryResult[row]["DDo"]["proof"]["signature"]))
-            p.start()
-            p.join()
-            result = p.exitcode
+            # p = multiprocessing.Process(target = verifySign, args = (self.pdfList[row], DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], VCQueryResult[row]["DDo"]["proof"]["signature"]))
+            # p.start()
+            # p.join()
+            # result = p.exitcode
+
+            result= verifySign(self.pdfList[row], DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], VCQueryResult[row]["DDo"]["proof"]["signature"])
 
             key = "success" if result else "failure"
             verifyResult[key] += 1
