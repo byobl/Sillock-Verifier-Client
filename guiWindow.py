@@ -3,7 +3,6 @@ import sys
 import csv
 import json
 import threading
-import multiprocessing
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
@@ -24,6 +23,46 @@ from base64 import b64decode, b64encode
 import hashlib
 
 
+class Worker(QThread):
+    verify_update = pyqtSignal(int, bool)
+    verify_result = pyqtSignal(object)
+
+    def __init__(self, parent = None):
+        super().__init__()
+        self.main = parent
+        self.working = True
+
+    def run(self):
+        # 검증 & 동작 중이면 새로 파일 실행 못하도록!
+        VCList = list()
+        DDoList = list()
+
+        # DID가 없는 잘못된 문서일 경우 -> 경고창
+        
+        for pdf in self.pdfList:
+            VCList.append(pdf[1].strip())
+            DDoList.append(pdf[2].strip())
+
+            
+        self.DDoQueryResult = queryToChainCode(self.APIkey, DDoList, "ddo")['result']
+        self.VCQueryResult = queryToChainCode(self.APIkey, VCList, "vc")['result']
+
+        verifyResult = {"success" : 0, "failure" : 0}
+
+        for row in range(len(self.pdfList)):
+            result = self.verify(row)
+            key = "success" if result else "failure"
+            verifyResult[key] += 1
+        
+        self.verify_result.emit(verifyResult)
+
+    def verify(self, row):
+        result = verifySign(self.pdfList[row], self.DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], self.VCQueryResult[row]["DDo"]["proof"]["signature"])
+        self.verify_update.emit(row, result)
+
+        return result
+    
+    
 def pdfToTxt(path):
     doc = fitz.open(path)
     return list(filter(lambda x: x != " " and x, doc[0].getText().splitlines()))
@@ -61,9 +100,7 @@ def verifySign(data, publicKey, signature):
 
     if signer.verify(digest, b64decode(signature.encode())):
         return True
-        #exit(True)
     return False
-    #exit(False)
 
 def restore(settings):
     finfo = QFileInfo(settings.fileName())
@@ -147,7 +184,6 @@ class App(QWidget):
         PbarLayout = QVBoxLayout()
         PbarLayout.addWidget(self.pbar)
 
-        
         # Set Grid Layout
         # Add Widget to Grid Layout
         ControlGrid = QGridLayout()
@@ -160,6 +196,10 @@ class App(QWidget):
         self.windowLayout.addLayout(VeriLayout ) # VeriLayout View
         self.windowLayout.addLayout(PbarLayout ) # PbarLayout View
         self.windowLayout.addLayout(ControlGrid) # ControlGrid View
+
+        self.th = Worker()
+        self.th.verify_update.connect(self.paint)
+        self.th.verify_result.connect(self.showResult)
 
         self.show()
 
@@ -180,64 +220,39 @@ class App(QWidget):
                     writer.writerow(row_data)
     
     def veriStart(self):
+        self.pbar.setFormat("검증 중...")
         print(self.APIkeyInput.text()) # API KEY
-        
-        t1 = threading.Thread(target = self.verifyThread)
-        t1.daemon = True
-        t1.start()
-
-    def verifyThread(self):
-        # Query to ChainCode
-        APIkey = self.APIkeyInput.text().strip()
-        if not APIkey :
-            return
-
-        VCList = list()
-        DDoList = list()
-
-        # DID가 없는 잘못된 문서일 경우 -> 경고창
-        
-        for pdf in self.pdfList:
-            VCList.append(pdf[1].strip())
-            DDoList.append(pdf[2].strip())
-
-        DDoQueryResult = queryToChainCode(APIkey, DDoList, "ddo")['result']
-        VCQueryResult = queryToChainCode(APIkey, VCList, "vc")['result']
-
+  
         # Check Row number of data
         if self.tableWidget.rowCount() == 0:
             return
         
         # certification API-Key
-        if len(self.APIkeyInput.text().strip()) == 0:
+        if len(self.APIkeyInput.text().strip()) == 0 :
             return
-        
-        # Reset verifyResult 
-        verifyResult = {"success" : 0, "failure" : 0}
 
-        # request Verification API & change table values
-        for row in range(self.numOfDocs):
-            for col in range(self.ColNum):
-                #print(self.dataset[row], self.dataset[col]) # (file name, file status)
-                self.tableWidget.repaint()
-                self.tableWidget.update()
-                time.sleep(0.5)
-            # Verification function() 
-            # p = multiprocessing.Process(target = verifySign, args = (self.pdfList[row], DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], VCQueryResult[row]["DDo"]["proof"]["signature"]))
-            # p.start()
-            # p.join()
-            # result = p.exitcode
+        self.th.APIkey = self.APIkeyInput.text().strip()
 
-            result= verifySign(self.pdfList[row], DDoQueryResult[row]["DDo"]["publicKey"][0]["publickeyPem"], VCQueryResult[row]["DDo"]["proof"]["signature"])
+        t1 = threading.Thread(target = self.th.run)
+        t1.daemon = True
+        t1.start()
 
-            key = "success" if result else "failure"
-            verifyResult[key] += 1
-            self.tableWidget.item(row, col).setText(str("진실" if result else "거짓"))
-            self.pbar.setValue((row + 1) / self.numOfDocs * 100)
+    def paint(self, row, result):
+        for col in range(self.ColNum):
+            self.tableWidget.repaint()
+            self.tableWidget.update()
+
+        self.tableWidget.item(row, col).setText(str("진실" if result else "거짓"))
+        self.pbar.setValue((row + 1) / self.numOfDocs * 100)
     
+    def showResult(self, verifyResult):
         buttonReply = QMessageBox.information(self, "검증 결과", "진실: {success}, 거짓: {failure}\n".format(success = verifyResult["success"], failure = verifyResult["failure"]), QMessageBox.Yes)
+        self.pbar.setValue(0)
+        self.pbar.setFormat("검증 완료")
 
     def upload_files(self): # pdf 검증 추가
+        self.pbar.setFormat("파일 업로딩...")
+
         self.openFileNamesDialog()
         
         if len(self.fileList) == 0:
@@ -246,29 +261,33 @@ class App(QWidget):
         self.numOfDocs = len(self.fileList)
         self.tableWidget.setRowCount(len(self.fileList))
         self.tableWidget.setColumnCount(self.ColNum)
+        
+        self.tableWidget.clear() ## reset tableWidget
         self.tableWidget.setHorizontalHeaderLabels(["파일 이름", "검증 결과"])
         self.tableWidget.setSortingEnabled(False)
 
         self.dataset = [[x, "-"] for x in self.fileList]
 
-        self.pdfList = list()
-        
+        self.th.pdfList = list()
+
         for row in range(self.numOfDocs):
             for col in range(self.ColNum):
                 item = QTableWidgetItem(str(self.dataset[row][col]))
                 self.tableWidget.setItem(row, col, item)
+            self.pbar.setValue((row + 1) / self.numOfDocs * 100)
             ## add pdfFile info
             pdfFile = pdfToTxt(self.fileList[row])
-            self.pdfList.append(pdfFile)
+            self.th.pdfList.append(pdfFile)
         
         self.pbar.setValue(0)
+        self.pbar.setFormat("업로딩 완료")
 
     def openFileNamesDialog(self):
         options  = QFileDialog.Options()
         files, _ = QFileDialog.getOpenFileNames(self,
-                                                "QFileDialog.getOpenFileNames()", 
+                                                "Open Files", 
                                                 "",
-                                                "All Files (*);;Python Files (*.py)")
+                                                "PDF Files (*.pdf)")
         if files:
             self.fileList = files
 
